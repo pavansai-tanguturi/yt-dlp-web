@@ -2,6 +2,9 @@
 
 A modern, privacy-focused YouTube video downloader built with Flask and yt-dlp. Download high-quality videos (including VP9, AV1, 4K+) and convert them to MP4 format for universal compatibility.
 
+## 🗑️ output view
+<img width="1792" height="1137" alt="Image" src="https://github.com/user-attachments/assets/a0c8af9b-65de-4304-9f9c-14b242351eeb" />
+
 ## ✨ Features
 
 - **🔥 Maximum Quality**: Downloads highest available quality (VP9, AV1, Opus, WebM, MKV, TS)
@@ -244,3 +247,4 @@ sudo apt install ffmpeg  # Ubuntu
 ---
 
 ⭐ **Star this repository if you find it useful!**
+
