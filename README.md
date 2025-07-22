@@ -2,6 +2,10 @@
 
 A modern YouTube video downloader built with Flask and yt-dlp. Download high-quality videos and convert them to MP4 format.
 
+## 🌐 Live Demo
+
+**Try it now:** [https://yt-dlp-web-1peu.onrender.com](https://yt-dlp-web-1peu.onrender.com)
+
 <img width="1792" height="1137" alt="YouTube Downloader Interface" src="https://github.com/user-attachments/assets/a0c8af9b-65de-4304-9f9c-14b242351eeb" />
 
 ## ✨ Features
@@ -14,6 +18,10 @@ A modern YouTube video downloader built with Flask and yt-dlp. Download high-qua
 
 ## 🚀 Quick Start
 
+### 🌐 Online Version
+Simply visit: **[https://yt-dlp-web-1peu.onrender.com](https://yt-dlp-web-1peu.onrender.com)**
+
+### 🏠 Local Development
 **Prerequisites:** 
 - Python 3.7+
 - FFmpeg (required for video processing and format conversion)
@@ -41,11 +49,21 @@ pip install -r requirements.txt
 brew install ffmpeg  # macOS
 sudo apt install ffmpeg  # Ubuntu
 
-# Run the app
+# Run the app locally
 python app.py
 ```
 
 Open `http://localhost:5000` in your browser.
+
+## 🌍 Deployment
+
+This app is deployed on **Render** at: [https://yt-dlp-web-1peu.onrender.com](https://yt-dlp-web-1peu.onrender.com)
+
+### Deploy Your Own
+1. Fork this repository
+2. Connect to Render, Heroku, or similar platform  
+3. Use the included `render.yaml` for automatic Render deployment
+4. FFmpeg is pre-installed on most cloud platforms
 
 ## 📋 Usage
 
