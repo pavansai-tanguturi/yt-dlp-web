@@ -289,49 +289,61 @@
                 body: JSON.stringify({ url: url })
             })
                 .then(response => {
-                    if (!response.ok) {
-                        // Try to get error message from response
-                        return response.json().then(errorData => {
-                            throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
-                        }).catch(() => {
-                            throw new Error(`HTTP error! status: ${response.status}`);
-                        });
-                    }
+                    // Check content type to determine if it's an error or a file
+                    const contentType = response.headers.get('Content-Type');
                     
-                    // Get filename from headers
-                    const contentDisposition = response.headers.get('Content-Disposition');
-                    let filename = 'video.mp4';
-                    if (contentDisposition) {
-                        const filenameMatch = contentDisposition.match(/filename="(.+)"/);
-                        if (filenameMatch) {
-                            filename = filenameMatch[1];
+                    if (!response.ok) {
+                        // If it's JSON content, it's an error response
+                        if (contentType && contentType.includes('application/json')) {
+                            return response.json().then(errorData => {
+                                throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+                            });
+                        } else {
+                            // Non-JSON error response
+                            throw new Error(`HTTP error! status: ${response.status}`);
                         }
                     }
                     
-                    // Get the blob and create download
-                    return response.blob().then(blob => {
-                        const downloadUrl = window.URL.createObjectURL(blob);
-                        const a = document.createElement('a');
-                        a.style.display = 'none';
-                        a.href = downloadUrl;
-                        a.download = filename;
-                        document.body.appendChild(a);
-                        a.click();
+                    // If response is OK and not JSON, it should be a file download
+                    if (contentType && !contentType.includes('application/json')) {
+                        // Get filename from headers
+                        const contentDisposition = response.headers.get('Content-Disposition');
+                        let filename = 'video.mp4';
+                        if (contentDisposition) {
+                            const filenameMatch = contentDisposition.match(/filename="(.+)"/);
+                            if (filenameMatch) {
+                                filename = filenameMatch[1];
+                            }
+                        }
                         
-                        // Show completion immediately when download starts
-                        showCompletion();
-                        
-                        // Hide loading after showing completion for 2 seconds
-                        setTimeout(() => {
-                            hideLoading();
-                        }, 2000);
-                        
-                        // Clean up blob URL
-                        setTimeout(() => {
-                            window.URL.revokeObjectURL(downloadUrl);
-                            document.body.removeChild(a);
-                        }, 3000);
-                    });
+                        // Get the blob and create download
+                        return response.blob().then(blob => {
+                            const downloadUrl = window.URL.createObjectURL(blob);
+                            const a = document.createElement('a');
+                            a.style.display = 'none';
+                            a.href = downloadUrl;
+                            a.download = filename;
+                            document.body.appendChild(a);
+                            a.click();
+                            
+                            // Show completion immediately when download starts
+                            showCompletion();
+                            
+                            // Hide loading after showing completion for 2 seconds
+                            setTimeout(() => {
+                                hideLoading();
+                            }, 2000);
+                            
+                            // Clean up blob URL
+                            setTimeout(() => {
+                                window.URL.revokeObjectURL(downloadUrl);
+                                document.body.removeChild(a);
+                            }, 3000);
+                        });
+                    } else {
+                        // Unexpected response type
+                        throw new Error('Unexpected response format');
+                    }
                 })
                 .catch(error => {
                     console.error('Download failed:', error);
