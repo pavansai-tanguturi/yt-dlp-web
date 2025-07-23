@@ -1,10 +1,18 @@
-from flask import Flask, request, render_template, Response, redirect ,send_from_directory
+from flask import Flask, request, render_template, Response, redirect, send_from_directory, jsonify
 import yt_dlp
 import tempfile
 import os
 import uuid
+import json
+import time
+import threading
+from queue import Queue
 
 app = Flask(__name__)
+
+# Global progress tracking
+download_progress = {}
+progress_queues = {}
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
@@ -13,11 +21,48 @@ def index():
         return render_template('index.html', video_url=url)
     return render_template('index.html')
 
+@app.route('/progress/<download_id>')
+def progress_stream(download_id):
+    """Server-Sent Events endpoint for real-time progress updates"""
+    def generate():
+        if download_id not in progress_queues:
+            progress_queues[download_id] = Queue()
+        
+        queue = progress_queues[download_id]
+        
+        while True:
+            try:
+                # Wait for progress update
+                data = queue.get(timeout=30)  # 30 second timeout
+                yield f"data: {json.dumps(data)}\n\n"
+                
+                # If download is complete, close the connection
+                if data.get('status') == 'complete':
+                    break
+                    
+            except:
+                # Timeout or error - send keepalive
+                yield f"data: {json.dumps({'status': 'keepalive'})}\n\n"
+    
+    return Response(generate(), mimetype='text/plain')
+
 @app.route('/download')
 def download():
     video_url = request.args.get('url')
     if not video_url:
         return "Missing URL", 400
+
+    # Generate unique download ID
+    download_id = str(uuid.uuid4())
+    progress_queues[download_id] = Queue()
+
+    def send_progress(data):
+        """Send progress update to the queue"""
+        if download_id in progress_queues:
+            try:
+                progress_queues[download_id].put(data, timeout=1)
+            except:
+                pass  # Queue might be full or closed
 
     try:
         # Create temporary directory for download
@@ -25,17 +70,49 @@ def download():
             
             # Progress tracking
             download_complete = False
+            total_bytes = 0
+            downloaded_bytes = 0
             
             def progress_hook(d):
-                nonlocal download_complete
+                nonlocal download_complete, total_bytes, downloaded_bytes
+                
                 if d['status'] == 'finished':
                     download_complete = True
+                    send_progress({
+                        'status': 'finished',
+                        'progress': 100,
+                        'downloaded_bytes': downloaded_bytes,
+                        'total_bytes': total_bytes,
+                        'message': '✅ Download complete!'
+                    })
+                    
                 elif d['status'] == 'downloading':
                     if 'total_bytes' in d and 'downloaded_bytes' in d:
-                        percent = (d['downloaded_bytes'] / d['total_bytes']) * 100
-                        # Only show progress every 10% to reduce console spam
+                        total_bytes = d['total_bytes']
+                        downloaded_bytes = d['downloaded_bytes']
+                        percent = (downloaded_bytes / total_bytes) * 100
+                        
+                        # Send progress update
+                        send_progress({
+                            'status': 'downloading',
+                            'progress': percent,
+                            'downloaded_bytes': downloaded_bytes,
+                            'total_bytes': total_bytes,
+                            'speed': d.get('speed', 0),
+                            'eta': d.get('eta', 0),
+                            'message': f'📥 Downloading: {percent:.1f}%'
+                        })
+                        
+                        # Console output for debugging
                         if percent % 10 < 1:
                             print(f"📥 Downloading: {percent:.0f}%")
+            
+            # Send initial progress
+            send_progress({
+                'status': 'starting',
+                'progress': 0,
+                'message': '🎬 Processing video...'
+            })
             
             # Get HIGHEST quality available - include VP9, AV1, Opus, WebM, MKV, TS for maximum quality
             ydl_opts = {
@@ -67,11 +144,22 @@ def download():
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 # First, extract info to see available formats
                 print(f"🎬 Processing: {video_url}")
+                send_progress({
+                    'status': 'processing',
+                    'progress': 5,
+                    'message': '🎯 Extracting video information...'
+                })
+                
                 info = ydl.extract_info(video_url, download=False)
                 title = info.get('title', 'video')
                 
                 # Show selected format only
                 print(f"🎯 Downloading maximum quality available...")
+                send_progress({
+                    'status': 'downloading',
+                    'progress': 10,
+                    'message': f'🎯 Starting download: {title}'
+                })
                 
                 # Now download
                 info = ydl.extract_info(video_url, download=True)
@@ -125,12 +213,21 @@ def download():
                     return f"Download failed - file verification error: {e}", 500
                 
                 print(f"✅ Download complete: {file_size:,} bytes")
+                send_progress({
+                    'status': 'streaming',
+                    'progress': 95,
+                    'message': f'📡 Preparing download: {file_size:,} bytes'
+                })
                 
                 # Read the entire file into memory before temp directory is cleaned up
                 try:
                     with open(downloaded_file, 'rb') as f:
                         file_data = f.read()
                 except Exception as e:
+                    send_progress({
+                        'status': 'error',
+                        'message': f'Error reading file: {str(e)}'
+                    })
                     return f"Error reading file: {str(e)}", 500
                 
                 # Clean filename for download - preserve original extension if not mp4
@@ -150,6 +247,11 @@ def download():
                     mimetype = 'video/mp4'
                 
                 print(f"📡 Streaming: {len(file_data):,} bytes")
+                send_progress({
+                    'status': 'complete',
+                    'progress': 100,
+                    'message': f'✅ Ready for download: {filename}'
+                })
                 
                 # Stream the file data from memory
                 def generate():
@@ -165,6 +267,10 @@ def download():
                         print(f"❌ Streaming error: {e}")
                         raise
                 
+                # Clean up progress queue
+                if download_id in progress_queues:
+                    del progress_queues[download_id]
+                
                 return Response(
                     generate(),
                     mimetype=mimetype,
@@ -175,11 +281,24 @@ def download():
                         "Accept-Ranges": "bytes",
                         "Cache-Control": "no-cache, no-store, must-revalidate",
                         "Pragma": "no-cache",
-                        "Expires": "0"
+                        "Expires": "0",
+                        "X-Download-ID": download_id  # Send download ID to frontend
                     }
                 )
             
     except Exception as e:
+        # Send error progress update
+        if download_id in progress_queues:
+            try:
+                progress_queues[download_id].put({
+                    'status': 'error',
+                    'message': f'❌ Error: {str(e)}'
+                }, timeout=1)
+            except:
+                pass
+            # Clean up
+            del progress_queues[download_id]
+        
         return f"Error: {str(e)}", 500
 
 @app.route('/static/<path:filename>')
