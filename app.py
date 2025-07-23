@@ -38,7 +38,7 @@ def download():
                         if percent % 10 < 1:
                             print(f"📥 Downloading: {percent:.0f}%")
             
-            # Get HIGHEST quality available - include VP9, AV1, Opus, WebM, MKV, TS for maximum quality
+            # Optimized for speed while maintaining anti-bot effectiveness
             ydl_opts = {
                 'format': 'bestvideo*+bestaudio/best',  # Get absolute best quality regardless of format/codec
                 'merge_output_format': 'mp4',  # Convert to mp4 for compatibility
@@ -48,10 +48,10 @@ def download():
                 'writeinfojson': False,  # Don't write info files
                 'writesubtitles': False,  # Don't download subtitles
                 'writeautomaticsub': False,  # No auto subtitles
-                'retries': 5,  # More retries for failed downloads
-                'fragment_retries': 5,  # More retries for failed fragments
-                'socket_timeout': 30,  # Timeout for socket operations
-                'http_chunk_size': 10485760,  # 10MB chunks for stable download
+                'retries': 3,  # Reduced retries for speed
+                'fragment_retries': 3,  # Reduced retries for speed
+                'socket_timeout': 30,  # Reasonable timeout
+                'http_chunk_size': 8388608,  # 8MB chunks for faster download
                 'progress_hooks': [progress_hook],  # Monitor download progress
                 'prefer_ffmpeg': True,  # Use ffmpeg for merging
                 'postprocessors': [{
@@ -59,33 +59,34 @@ def download():
                     'preferedformat': 'mp4',
                 }, {
                     'key': 'FFmpegMetadata',
-                }],  # Convert VP9/AV1/WebM/MKV/TS to MP4 for compatibility while preserving quality
+                }],
                 'extract_flat': False,  # Get full video info for best quality selection
                 'ignoreerrors': False,  # Don't ignore errors - we want best quality
                 'embed_subs': False,  # Don't embed subtitles to keep file size optimal
                 
-                # Anti-bot measures
+                # Fast anti-bot measures
                 'extractor_args': {
                     'youtube': {
-                        'skip': ['hls', 'dash'],  # Skip adaptive formats that might trigger bot detection
-                        'player_skip': ['configs'],  # Skip player config that might trigger detection
+                        'skip': ['hls', 'dash', 'translated_subs'],
+                        'player_skip': ['configs'],
+                        'player_client': ['android', 'web'],  # Android client works well
                     }
                 },
                 'http_headers': {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                    'Accept-Language': 'en-us,en;q=0.5',
-                    'Accept-Encoding': 'gzip,deflate',
-                    'Accept-Charset': 'ISO-8859-1,utf-8;q=0.7,*;q=0.7',
-                    'Connection': 'keep-alive',
-                    'Upgrade-Insecure-Requests': '1',
+                    'User-Agent': 'com.google.android.youtube/19.09.37 (Linux; U; Android 11; GB) gzip',
+                    'Accept': '*/*',
+                    'Accept-Language': 'en-US,en;q=0.9',
+                    'Accept-Encoding': 'gzip, deflate',
+                    'X-YouTube-Client-Name': '3',  # Android client
+                    'X-YouTube-Client-Version': '19.09.37',
                 },
-                'sleep_interval_requests': 1,  # Sleep 1 second between requests
-                'sleep_interval_subtitles': 1,  # Sleep 1 second between subtitle requests
+                'sleep_interval_requests': 0.5,  # Much faster - only 0.5 second delay
+                'sleep_interval_subtitles': 0.5,  
                 'sleep_interval': 0,  # No sleep between fragments
-                'max_sleep_interval': 5,  # Maximum sleep interval
-                'cookiefile': None,  # We'll try without cookies first
-                'nocheckcertificate': True,  # Ignore SSL certificate errors
+                'max_sleep_interval': 2,  # Maximum 2 seconds
+                'cookiefile': None,  
+                'nocheckcertificate': True,
+                'geo_bypass': True,
             }
             
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -103,36 +104,59 @@ def download():
                     info = ydl.extract_info(video_url, download=True)
                     
                 except Exception as e:
-                    # If we get a bot detection error, try with different settings
-                    if "Sign in to confirm" in str(e) or "bot" in str(e).lower():
-                        print("🤖 Bot detection encountered, trying alternative approach...")
+                    # Fast single fallback for bot detection
+                    error_msg = str(e).lower()
+                    if any(keyword in error_msg for keyword in ["sign in to confirm", "bot", "cookies", "403", "forbidden", "unable to download"]):
+                        print("🤖 Bot detection encountered, trying fast fallback...")
                         
-                        # Try with more conservative settings
-                        fallback_opts = ydl_opts.copy()
-                        fallback_opts.update({
-                            'format': 'best[height<=720]/best',  # Lower quality to avoid detection
-                            'http_headers': {
-                                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.1 Safari/605.1.15',
-                                'Accept': '*/*',
-                                'Accept-Language': 'en-US,en;q=0.9',
-                                'Connection': 'keep-alive',
-                            },
-                            'sleep_interval_requests': 2,  # More conservative timing
-                            'max_sleep_interval': 10,
+                        # Single fast fallback - TV embedded client with minimal settings
+                        fallback_opts = {
+                            'format': 'best[height<=720]/best',  # Reasonable quality
+                            'outtmpl': os.path.join(temp_dir, '%(title)s.%(ext)s'),
+                            'quiet': True,
+                            'no_warnings': True,
+                            'writeinfojson': False,
+                            'writesubtitles': False,
+                            'writeautomaticsub': False,
+                            'retries': 2,  # Fast retries
+                            'fragment_retries': 2,
+                            'socket_timeout': 45,
+                            'http_chunk_size': 4194304,  # 4MB chunks
+                            'progress_hooks': [progress_hook],
+                            'prefer_ffmpeg': False,  # Skip ffmpeg for speed
+                            'postprocessors': [],  # No post-processing
+                            'extract_flat': False,
+                            'ignoreerrors': True,
+                            'embed_subs': False,
+                            
                             'extractor_args': {
                                 'youtube': {
-                                    'skip': ['hls', 'dash', 'storyboard'],
+                                    'skip': ['hls', 'dash', 'storyboard', 'translated_subs'],
                                     'player_skip': ['configs', 'webpage'],
+                                    'player_client': ['tv_embedded'],  # TV client works well
                                 }
                             },
-                        })
+                            'http_headers': {
+                                'User-Agent': 'Mozilla/5.0 (SMART-TV; Linux; Tizen 2.4.0) AppleWebKit/538.1 (KHTML, like Gecko) Version/2.4.0 TV Safari/538.1',
+                                'Accept': '*/*',
+                                'Accept-Language': 'en',
+                                'Accept-Encoding': 'gzip',
+                                'Connection': 'keep-alive',
+                            },
+                            'sleep_interval_requests': 1,  # Only 1 second delay
+                            'sleep_interval_subtitles': 1,
+                            'sleep_interval': 0,  # No fragment sleep
+                            'max_sleep_interval': 3,  # Maximum 3 seconds
+                            'cookiefile': None,
+                            'nocheckcertificate': True,
+                            'geo_bypass': True,
+                        }
                         
+                        print("🔄 Trying TV embedded client (fast fallback)...")
                         with yt_dlp.YoutubeDL(fallback_opts) as fallback_ydl:
                             info = fallback_ydl.extract_info(video_url, download=False)
                             title = info.get('title', 'video')
-                            
-                            print(f"🎯 Alternative download: {title}")
-                            
+                            print(f"🎯 Fallback download: {title}")
                             info = fallback_ydl.extract_info(video_url, download=True)
                     else:
                         # Re-raise other errors
