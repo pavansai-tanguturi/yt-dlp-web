@@ -1,7 +1,7 @@
 {
-    "name": "YouTube Downloader - High Quality Video Download",
+    "name": "YouTube Downloader",
     "short_name": "YT-DLP Web",
-    "description": "Download YouTube videos in maximum quality (4K, VP9, AV1) converted to MP4",
+    "description": "Download YouTube videos in maximum quality",
     "icons": [
         {
             "src": "/static/android-chrome-192x192.png",

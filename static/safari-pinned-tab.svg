@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- Background circle -->
+  <circle cx="256" cy="256" r="256" fill="#007bff"/>
+  
+  <!-- Video player rectangle -->
+  <rect x="128" y="160" width="256" height="192" rx="16" ry="16" fill="#ffffff" stroke="#007bff" stroke-width="4"/>
+  
+  <!-- Play button triangle -->
+  <polygon points="200,210 200,290 280,250" fill="#007bff"/>
+  
+  <!-- Download arrow -->
+  <g transform="translate(320, 320)">
+    <circle cx="32" cy="32" r="48" fill="#ffffff" stroke="#007bff" stroke-width="6"/>
+    <path d="M32 16 L32 48 M20 36 L32 48 L44 36" stroke="#007bff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  </g>
+</svg>
