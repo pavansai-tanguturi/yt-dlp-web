@@ -1,4 +1,4 @@
-from flask import Flask, request, render_template, Response, redirect
+from flask import Flask, request, render_template, Response, redirect ,send_from_directory
 import yt_dlp
 import tempfile
 import os
@@ -185,7 +185,6 @@ def download():
 @app.route('/static/<path:filename>')
 def serve_static(filename):
     """Serve static files like favicon"""
-    from flask import send_from_directory
     return send_from_directory('static', filename)
 
 if __name__ == '__main__':
