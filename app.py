@@ -1,18 +1,11 @@
-from flask import Flask, request, render_template, Response, redirect, send_from_directory, jsonify
+from flask import Flask, request, render_template, Response, send_from_directory
 import yt_dlp
 import tempfile
 import os
 import uuid
-import json
 import time
-import threading
-from queue import Queue
 
 app = Flask(__name__)
-
-# Global progress tracking
-download_progress = {}
-progress_queues = {}
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
@@ -21,98 +14,29 @@ def index():
         return render_template('index.html', video_url=url)
     return render_template('index.html')
 
-@app.route('/progress/<download_id>')
-def progress_stream(download_id):
-    """Server-Sent Events endpoint for real-time progress updates"""
-    def generate():
-        if download_id not in progress_queues:
-            progress_queues[download_id] = Queue()
-        
-        queue = progress_queues[download_id]
-        
-        while True:
-            try:
-                # Wait for progress update
-                data = queue.get(timeout=30)  # 30 second timeout
-                yield f"data: {json.dumps(data)}\n\n"
-                
-                # If download is complete, close the connection
-                if data.get('status') == 'complete':
-                    break
-                    
-            except:
-                # Timeout or error - send keepalive
-                yield f"data: {json.dumps({'status': 'keepalive'})}\n\n"
-    
-    return Response(generate(), mimetype='text/plain')
-
 @app.route('/download')
 def download():
     video_url = request.args.get('url')
     if not video_url:
         return "Missing URL", 400
 
-    # Generate unique download ID
-    download_id = str(uuid.uuid4())
-    progress_queues[download_id] = Queue()
-
-    def send_progress(data):
-        """Send progress update to the queue"""
-        if download_id in progress_queues:
-            try:
-                progress_queues[download_id].put(data, timeout=1)
-            except:
-                pass  # Queue might be full or closed
-
     try:
         # Create temporary directory for download
         with tempfile.TemporaryDirectory() as temp_dir:
             
-            # Progress tracking
+            # Progress tracking for console output only
             download_complete = False
-            total_bytes = 0
-            downloaded_bytes = 0
             
             def progress_hook(d):
-                nonlocal download_complete, total_bytes, downloaded_bytes
-                
+                nonlocal download_complete
                 if d['status'] == 'finished':
                     download_complete = True
-                    send_progress({
-                        'status': 'finished',
-                        'progress': 100,
-                        'downloaded_bytes': downloaded_bytes,
-                        'total_bytes': total_bytes,
-                        'message': '✅ Download complete!'
-                    })
-                    
                 elif d['status'] == 'downloading':
                     if 'total_bytes' in d and 'downloaded_bytes' in d:
-                        total_bytes = d['total_bytes']
-                        downloaded_bytes = d['downloaded_bytes']
-                        percent = (downloaded_bytes / total_bytes) * 100
-                        
-                        # Send progress update
-                        send_progress({
-                            'status': 'downloading',
-                            'progress': percent,
-                            'downloaded_bytes': downloaded_bytes,
-                            'total_bytes': total_bytes,
-                            'speed': d.get('speed', 0),
-                            'eta': d.get('eta', 0),
-                            'message': f'📥 Downloading: {percent:.1f}%'
-                        })
-                        
-                        # Console output for debugging
+                        percent = (d['downloaded_bytes'] / d['total_bytes']) * 100
+                        # Only show progress every 10% to reduce console spam
                         if percent % 10 < 1:
                             print(f"📥 Downloading: {percent:.0f}%")
-            
-            # Send initial progress
-            send_progress({
-                'status': 'starting',
-                'progress': 0,
-                'message': '🎬 Processing video...'
-            })
             
             # Get HIGHEST quality available - include VP9, AV1, Opus, WebM, MKV, TS for maximum quality
             ydl_opts = {
@@ -139,30 +63,80 @@ def download():
                 'extract_flat': False,  # Get full video info for best quality selection
                 'ignoreerrors': False,  # Don't ignore errors - we want best quality
                 'embed_subs': False,  # Don't embed subtitles to keep file size optimal
+                
+                # Anti-bot measures
+                'extractor_args': {
+                    'youtube': {
+                        'skip': ['hls', 'dash'],  # Skip adaptive formats that might trigger bot detection
+                        'player_skip': ['configs'],  # Skip player config that might trigger detection
+                    }
+                },
+                'http_headers': {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                    'Accept-Language': 'en-us,en;q=0.5',
+                    'Accept-Encoding': 'gzip,deflate',
+                    'Accept-Charset': 'ISO-8859-1,utf-8;q=0.7,*;q=0.7',
+                    'Connection': 'keep-alive',
+                    'Upgrade-Insecure-Requests': '1',
+                },
+                'sleep_interval_requests': 1,  # Sleep 1 second between requests
+                'sleep_interval_subtitles': 1,  # Sleep 1 second between subtitle requests
+                'sleep_interval': 0,  # No sleep between fragments
+                'max_sleep_interval': 5,  # Maximum sleep interval
+                'cookiefile': None,  # We'll try without cookies first
+                'nocheckcertificate': True,  # Ignore SSL certificate errors
             }
             
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                # First, extract info to see available formats
-                print(f"🎬 Processing: {video_url}")
-                send_progress({
-                    'status': 'processing',
-                    'progress': 5,
-                    'message': '🎯 Extracting video information...'
-                })
-                
-                info = ydl.extract_info(video_url, download=False)
-                title = info.get('title', 'video')
-                
-                # Show selected format only
-                print(f"🎯 Downloading maximum quality available...")
-                send_progress({
-                    'status': 'downloading',
-                    'progress': 10,
-                    'message': f'🎯 Starting download: {title}'
-                })
-                
-                # Now download
-                info = ydl.extract_info(video_url, download=True)
+                try:
+                    # First, extract info to see available formats
+                    print(f"🎬 Processing: {video_url}")
+                    
+                    info = ydl.extract_info(video_url, download=False)
+                    title = info.get('title', 'video')
+                    
+                    # Show selected format only
+                    print(f"🎯 Downloading maximum quality available...")
+                    
+                    # Now download
+                    info = ydl.extract_info(video_url, download=True)
+                    
+                except Exception as e:
+                    # If we get a bot detection error, try with different settings
+                    if "Sign in to confirm" in str(e) or "bot" in str(e).lower():
+                        print("🤖 Bot detection encountered, trying alternative approach...")
+                        
+                        # Try with more conservative settings
+                        fallback_opts = ydl_opts.copy()
+                        fallback_opts.update({
+                            'format': 'best[height<=720]/best',  # Lower quality to avoid detection
+                            'http_headers': {
+                                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.1 Safari/605.1.15',
+                                'Accept': '*/*',
+                                'Accept-Language': 'en-US,en;q=0.9',
+                                'Connection': 'keep-alive',
+                            },
+                            'sleep_interval_requests': 2,  # More conservative timing
+                            'max_sleep_interval': 10,
+                            'extractor_args': {
+                                'youtube': {
+                                    'skip': ['hls', 'dash', 'storyboard'],
+                                    'player_skip': ['configs', 'webpage'],
+                                }
+                            },
+                        })
+                        
+                        with yt_dlp.YoutubeDL(fallback_opts) as fallback_ydl:
+                            info = fallback_ydl.extract_info(video_url, download=False)
+                            title = info.get('title', 'video')
+                            
+                            print(f"🎯 Alternative download: {title}")
+                            
+                            info = fallback_ydl.extract_info(video_url, download=True)
+                    else:
+                        # Re-raise other errors
+                        raise e
                 
                 # Wait for completion
                 import time
@@ -213,21 +187,12 @@ def download():
                     return f"Download failed - file verification error: {e}", 500
                 
                 print(f"✅ Download complete: {file_size:,} bytes")
-                send_progress({
-                    'status': 'streaming',
-                    'progress': 95,
-                    'message': f'📡 Preparing download: {file_size:,} bytes'
-                })
                 
                 # Read the entire file into memory before temp directory is cleaned up
                 try:
                     with open(downloaded_file, 'rb') as f:
                         file_data = f.read()
                 except Exception as e:
-                    send_progress({
-                        'status': 'error',
-                        'message': f'Error reading file: {str(e)}'
-                    })
                     return f"Error reading file: {str(e)}", 500
                 
                 # Clean filename for download - preserve original extension if not mp4
@@ -247,11 +212,6 @@ def download():
                     mimetype = 'video/mp4'
                 
                 print(f"📡 Streaming: {len(file_data):,} bytes")
-                send_progress({
-                    'status': 'complete',
-                    'progress': 100,
-                    'message': f'✅ Ready for download: {filename}'
-                })
                 
                 # Stream the file data from memory
                 def generate():
@@ -267,10 +227,6 @@ def download():
                         print(f"❌ Streaming error: {e}")
                         raise
                 
-                # Clean up progress queue
-                if download_id in progress_queues:
-                    del progress_queues[download_id]
-                
                 return Response(
                     generate(),
                     mimetype=mimetype,
@@ -281,24 +237,11 @@ def download():
                         "Accept-Ranges": "bytes",
                         "Cache-Control": "no-cache, no-store, must-revalidate",
                         "Pragma": "no-cache",
-                        "Expires": "0",
-                        "X-Download-ID": download_id  # Send download ID to frontend
+                        "Expires": "0"
                     }
                 )
             
     except Exception as e:
-        # Send error progress update
-        if download_id in progress_queues:
-            try:
-                progress_queues[download_id].put({
-                    'status': 'error',
-                    'message': f'❌ Error: {str(e)}'
-                }, timeout=1)
-            except:
-                pass
-            # Clean up
-            del progress_queues[download_id]
-        
         return f"Error: {str(e)}", 500
 
 @app.route('/static/<path:filename>')
@@ -306,6 +249,8 @@ def serve_static(filename):
     """Serve static files like favicon"""
     return send_from_directory('static', filename)
 
+if __name__ == '__main__':
+    app.run(debug=True)
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port)
