@@ -182,6 +182,12 @@ def download():
     except Exception as e:
         return f"Error: {str(e)}", 500
 
+@app.route('/static/<path:filename>')
+def serve_static(filename):
+    """Serve static files like favicon"""
+    from flask import send_from_directory
+    return send_from_directory('static', filename)
+
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port)

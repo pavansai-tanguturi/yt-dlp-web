@@ -1,0 +1,22 @@
+{
+    "name": "YouTube Downloader - High Quality Video Download",
+    "short_name": "YT-DLP Web",
+    "description": "Download YouTube videos in maximum quality (4K, VP9, AV1) converted to MP4",
+    "icons": [
+        {
+            "src": "/static/android-chrome-192x192.png",
+            "sizes": "192x192",
+            "type": "image/png"
+        },
+        {
+            "src": "/static/android-chrome-512x512.png",
+            "sizes": "512x512",
+            "type": "image/png"
+        }
+    ],
+    "theme_color": "#007bff",
+    "background_color": "#ffffff",
+    "display": "standalone",
+    "start_url": "/",
+    "scope": "/"
+}
