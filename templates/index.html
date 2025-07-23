@@ -280,12 +280,22 @@
         function downloadVideo(url) {
             showLoading();
             
-            const downloadUrl = `/download?url=${encodeURIComponent(url)}`;
-            
-            fetch(downloadUrl)
+            // Make a POST request with JSON body (matching Flask backend)
+            fetch('/download', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ url: url })
+            })
                 .then(response => {
                     if (!response.ok) {
-                        throw new Error(`HTTP error! status: ${response.status}`);
+                        // Try to get error message from response
+                        return response.json().then(errorData => {
+                            throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+                        }).catch(() => {
+                            throw new Error(`HTTP error! status: ${response.status}`);
+                        });
                     }
                     
                     // Get filename from headers
@@ -326,7 +336,8 @@
                 .catch(error => {
                     console.error('Download failed:', error);
                     hideLoading();
-                    alert('Download failed. Please try again.');
+                    // Show the actual error message if available
+                    alert(`Download failed: ${error.message}`);
                 });
         }
         
