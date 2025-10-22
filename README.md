@@ -44,6 +44,8 @@ Simply visit: **[https://yt-dlp-web-1peu.onrender.com](https://yt-dlp-web-1peu.o
 git clone https://github.com/pavansai-tanguturi/yt-dlp-web.git
 cd yt-dlp-web
 pip install -r requirements.txt
+python -m venv .venv
+source .venv/bin/activate
 
 # Install FFmpeg (REQUIRED - app won't work without this!)
 brew install ffmpeg  # macOS
